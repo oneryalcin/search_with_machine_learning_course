@@ -1,10 +1,12 @@
 import argparse
+import tempfile
 import multiprocessing
 import glob
 from tqdm import tqdm
 import os
 import xml.etree.ElementTree as ET
 from pathlib import Path
+import pandas as pd
 
 def transform_name(product_name):
     # IMPLEMENT
@@ -61,9 +63,24 @@ def _label_filename(filename):
 if __name__ == '__main__':
     files = glob.glob(f'{directory}/*.xml')
     print("Writing results to %s" % output_file)
+    # with tempfile.TemporaryFile() as fp:
+    container = []
     with multiprocessing.Pool() as p:
         all_labels = tqdm(p.imap(_label_filename, files), total=len(files))
+        for label_list in all_labels:
+            for (cat, name) in label_list:
+                container.append(
+                    {
+                        "label": f'__label__{cat}',
+                        "name": name
+                    }
+                )
+
+        df = pd.DataFrame.from_records(container)
+        cnt = df.groupby('label').count().reset_index().rename(columns={'name':'count'})
+        filtered_min_cnt = cnt[cnt['count'] > min_products]
+        output_list = filtered_min_cnt.merge(df, how='inner').to_dict(orient='records')
+        
         with open(output_file, 'w') as output:
-            for label_list in all_labels:
-                for (cat, name) in label_list:
-                    output.write(f'__label__{cat} {name}\n')
+            for line in output_list:
+                output.write(f"{line['label']} {line['name']}\n")
